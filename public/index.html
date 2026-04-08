@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Login Pro</title>
+  <title>FastMoney 💸</title>
 
   <style>
     body {
@@ -10,14 +10,14 @@
       background: #0f172a;
       color: white;
       text-align: center;
-      margin-top: 100px;
+      margin-top: 80px;
     }
 
     .card {
       background: #1e293b;
       padding: 30px;
       border-radius: 15px;
-      width: 300px;
+      width: 320px;
       margin: auto;
       box-shadow: 0 0 20px rgba(0,0,0,0.5);
     }
@@ -47,13 +47,20 @@
     #dashboard {
       display: none;
     }
+
+    .money {
+      font-size: 22px;
+      margin: 10px 0;
+      color: #4ade80;
+    }
   </style>
 </head>
 
 <body>
 
+<!-- LOGIN -->
 <div class="card" id="auth">
-  <h2>🔐 Login</h2>
+  <h2>🔐 FastMoney</h2>
 
   <input id="user" placeholder="Usuario"><br>
   <input id="pass" type="password" placeholder="Password"><br>
@@ -64,30 +71,42 @@
   <p id="msg"></p>
 </div>
 
+<!-- DASHBOARD -->
 <div class="card" id="dashboard">
   <h2>🏦 Dashboard</h2>
+
   <p id="welcome"></p>
+  <p class="money">💰 Saldo: $<span id="balance">0</span></p>
+
+  <h3>💸 Enviar dinero</h3>
+  <input id="to" placeholder="Enviar a (usuario)">
+  <input id="amount" type="number" placeholder="Monto">
+
+  <button onclick="send()">Enviar</button>
+
+  <p id="sendMsg"></p>
 
   <button onclick="logout()">Cerrar sesión</button>
 </div>
 
 <script>
 async function register(){
-  let username = document.getElementById("user").value;
-  let password = document.getElementById("pass").value;
+  let username = user.value;
+  let password = pass.value;
 
-  await fetch("/register",{
+  let r = await fetch("/register",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body: JSON.stringify({username, password})
   });
 
-  document.getElementById("msg").innerText = "Registrado!";
+  let data = await r.json();
+  msg.innerText = data.success ? "✅ Registrado!" : "❌ Error";
 }
 
 async function login(){
-  let username = document.getElementById("user").value;
-  let password = document.getElementById("pass").value;
+  let username = user.value;
+  let password = pass.value;
 
   let r = await fetch("/login",{
     method:"POST",
@@ -100,7 +119,7 @@ async function login(){
   if (data.success) {
     loadDashboard();
   } else {
-    document.getElementById("msg").innerText = "❌ Datos incorrectos";
+    msg.innerText = "❌ Datos incorrectos";
   }
 }
 
@@ -108,19 +127,54 @@ async function loadDashboard(){
   let r = await fetch("/dashboard");
   let data = await r.json();
 
-  if (data.message.includes("Bienvenido")) {
-    document.getElementById("auth").style.display = "none";
-    document.getElementById("dashboard").style.display = "block";
-    document.getElementById("welcome").innerText = data.message;
+  if (data.message) {
+    auth.style.display = "none";
+    dashboard.style.display = "block";
+    welcome.innerText = data.message;
+
+    loadBalance();
   }
 }
 
+// 💰 CARGAR SALDO
+async function loadBalance(){
+  let r = await fetch("/balance");
+  let data = await r.json();
+
+  balance.innerText = data.balance;
+}
+
+// 💸 ENVIAR DINERO
+async function send(){
+  let toUser = to.value;
+  let amountValue = parseInt(amount.value);
+
+  let r = await fetch("/send",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      to: toUser,
+      amount: amountValue
+    })
+  });
+
+  let data = await r.json();
+
+  if (data.success) {
+    sendMsg.innerText = "✅ Enviado!";
+    loadBalance();
+  } else {
+    sendMsg.innerText = "❌ " + data.message;
+  }
+}
+
+// 🚪 LOGOUT
 async function logout(){
   await fetch("/logout");
   location.reload();
 }
 
-// 🔥 Auto login si ya hay sesión
+// 🔥 AUTO LOGIN
 loadDashboard();
 </script>
 
