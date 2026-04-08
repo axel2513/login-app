@@ -109,4 +109,7 @@ app.get("/logout", (req, res) => {
   res.json({ message: "Sesión cerrada" });
 });
 
-app.listen(3000, () => console.log("Servidor PRO en http://localhost:3000"));
+// 🚀 IMPORTANTE PARA RENDER
+app.listen(process.env.PORT || 3000, () => {
+  console.log("Servidor PRO corriendo");
+});
