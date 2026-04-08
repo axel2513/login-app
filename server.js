@@ -95,6 +95,11 @@ app.get("/logout", (req, res) => {
   res.json({ message: "Sesión cerrada" });
 });
 
+// 🔥 HOME (CLAVE PARA RENDER)
+app.get("/", (req, res) => {
+  res.send("🔥 FastMoney App funcionando 🚀");
+});
+
 // 🚀 IMPORTANTE PARA RENDER
 app.listen(process.env.PORT || 3000, () => {
   console.log("Servidor PRO corriendo");
