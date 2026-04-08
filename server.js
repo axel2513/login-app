@@ -1,210 +1,182 @@
 const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
 const bcrypt = require("bcryptjs");
 const session = require("express-session");
-const SQLiteStore = require("connect-sqlite3")(session);
+const { Pool } = require("pg");
 
 const app = express();
 
-// 🛡️ SEGURIDAD BÁSICA
-app.use(express.json({ limit: "10kb" })); // evita ataques de payload
+app.use(express.json());
 app.use(express.static("public"));
 
-// 🔐 SESIONES (PRODUCCIÓN)
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
 app.use(session({
-  store: new SQLiteStore({ db: "sessions.sqlite" }),
-  secret: process.env.SESSION_SECRET || "ultra_secret_key_change_me",
+  secret: "mi_secreto_super_ultra_seguro_123",
   resave: false,
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production", // 🔥 Render usa HTTPS
-    sameSite: "lax",
-    maxAge: 1000 * 60 * 60 * 24 // 1 día
+    secure: false
   }
 }));
 
-// 🗄️ BASE DE DATOS
-const db = new sqlite3.Database("database.db", (err) => {
-  if (err) console.error("DB ERROR:", err);
-  else console.log("✅ DB conectada");
-});
-
-// 🧱 TABLAS SEGURAS
-db.serialize(() => {
-  db.run(`
+// 🧱 CREAR TABLAS AUTOMÁTICAMENTE
+(async () => {
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       username TEXT UNIQUE,
       password TEXT,
       balance INTEGER DEFAULT 1000
-    )
+    );
   `);
 
-  db.run(`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       from_user TEXT,
       to_user TEXT,
       amount INTEGER,
-      date DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
+      date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
   `);
-});
+})();
 
-// 🛡️ MIDDLEWARE AUTH
+// 🛡️ AUTH
 function auth(req, res, next) {
-  if (req.session.user) return next();
-  return res.status(401).json({ message: "No autorizado" });
+  if (req.session.user) next();
+  else res.status(401).json({ message: "No autorizado" });
 }
 
 // 📝 REGISTER
 app.post("/register", async (req, res) => {
-  try {
-    const { username, password } = req.body;
+  const { username, password } = req.body;
 
-    if (!username || !password) {
-      return res.json({ success: false, message: "Datos inválidos" });
-    }
+  if (!username || !password) return res.json({ success: false });
 
-    db.get("SELECT * FROM users WHERE username=?", [username], async (err, user) => {
-      if (user) return res.json({ success: false, message: "Usuario ya existe" });
+  const userExists = await pool.query(
+    "SELECT * FROM users WHERE username=$1",
+    [username]
+  );
 
-      const hash = await bcrypt.hash(password, 10);
-
-      db.run(
-        "INSERT INTO users (username, password) VALUES (?, ?)",
-        [username, hash],
-        (err) => {
-          if (err) return res.json({ success: false, message: "Error DB" });
-          res.json({ success: true });
-        }
-      );
-    });
-  } catch (err) {
-    res.status(500).json({ success: false });
+  if (userExists.rows.length > 0) {
+    return res.json({ success: false });
   }
+
+  const hash = await bcrypt.hash(password, 10);
+
+  await pool.query(
+    "INSERT INTO users (username, password) VALUES ($1, $2)",
+    [username, hash]
+  );
+
+  res.json({ success: true });
 });
 
 // 🔑 LOGIN
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
-  db.get("SELECT * FROM users WHERE username=?", [username], async (err, user) => {
-    if (!user) return res.json({ success: false });
+  const user = await pool.query(
+    "SELECT * FROM users WHERE username=$1",
+    [username]
+  );
 
-    const valid = await bcrypt.compare(password, user.password);
+  if (user.rows.length === 0) return res.json({ success: false });
 
-    if (!valid) return res.json({ success: false });
+  const valid = await bcrypt.compare(password, user.rows[0].password);
 
-    req.session.user = user.username;
+  if (valid) {
+    req.session.user = user.rows[0].username;
     res.json({ success: true });
-  });
+  } else {
+    res.json({ success: false });
+  }
 });
 
 // 📌 SESSION
 app.get("/session", (req, res) => {
-  res.json({
-    logged: !!req.session.user,
-    user: req.session.user || null
-  });
+  if (req.session.user) {
+    res.json({ logged: true, user: req.session.user });
+  } else {
+    res.json({ logged: false });
+  }
 });
 
 // 💰 DASHBOARD
-app.get("/dashboard", auth, (req, res) => {
-  db.get(
-    "SELECT username, balance FROM users WHERE username=?",
-    [req.session.user],
-    (err, user) => {
-      if (err) return res.status(500).json({ error: true });
-      res.json(user);
-    }
+app.get("/dashboard", auth, async (req, res) => {
+  const user = await pool.query(
+    "SELECT username, balance FROM users WHERE username=$1",
+    [req.session.user]
   );
+
+  res.json(user.rows[0]);
 });
 
-// 💸 ENVIAR DINERO (MEJORADO)
-app.post("/send", auth, (req, res) => {
+// 💸 ENVIAR DINERO
+app.post("/send", auth, async (req, res) => {
   const { to, amount } = req.body;
 
-  if (!to || !amount || amount <= 0) {
-    return res.json({ success: false, message: "Datos inválidos" });
+  if (!to || amount <= 0) {
+    return res.json({ success: false });
   }
 
-  const amountNum = parseInt(amount);
+  const sender = await pool.query(
+    "SELECT * FROM users WHERE username=$1",
+    [req.session.user]
+  );
 
-  db.get("SELECT * FROM users WHERE username=?", [req.session.user], (err, sender) => {
-    db.get("SELECT * FROM users WHERE username=?", [to], (err, receiver) => {
+  const receiver = await pool.query(
+    "SELECT * FROM users WHERE username=$1",
+    [to]
+  );
 
-      if (!receiver) {
-        return res.json({ success: false, message: "Usuario no existe" });
-      }
+  if (receiver.rows.length === 0) {
+    return res.json({ success: false, message: "Usuario no existe" });
+  }
 
-      if (sender.username === receiver.username) {
-        return res.json({ success: false, message: "No puedes enviarte dinero a ti mismo" });
-      }
+  if (sender.rows[0].balance < amount) {
+    return res.json({ success: false, message: "Saldo insuficiente" });
+  }
 
-      if (sender.balance < amountNum) {
-        return res.json({ success: false, message: "Saldo insuficiente" });
-      }
+  await pool.query("UPDATE users SET balance = balance - $1 WHERE username=$2", [amount, sender.rows[0].username]);
 
-      // 🔥 TRANSACCIÓN SEGURA
-      db.serialize(() => {
-        db.run("BEGIN TRANSACTION");
+  await pool.query("UPDATE users SET balance = balance + $1 WHERE username=$2", [amount, receiver.rows[0].username]);
 
-        db.run(
-          "UPDATE users SET balance = balance - ? WHERE username=?",
-          [amountNum, sender.username]
-        );
+  await pool.query(
+    "INSERT INTO transactions (from_user, to_user, amount) VALUES ($1, $2, $3)",
+    [sender.rows[0].username, receiver.rows[0].username, amount]
+  );
 
-        db.run(
-          "UPDATE users SET balance = balance + ? WHERE username=?",
-          [amountNum, receiver.username]
-        );
-
-        db.run(`
-          INSERT INTO transactions (from_user, to_user, amount)
-          VALUES (?, ?, ?)
-        `, [sender.username, receiver.username, amountNum]);
-
-        db.run("COMMIT");
-      });
-
-      res.json({ success: true });
-    });
-  });
+  res.json({ success: true });
 });
 
 // 📊 HISTORIAL
-app.get("/history", auth, (req, res) => {
-  db.all(
-    `
-    SELECT * FROM transactions
-    WHERE from_user=? OR to_user=?
-    ORDER BY date DESC
-  `,
-    [req.session.user, req.session.user],
-    (err, rows) => {
-      if (err) return res.status(500).json({ error: true });
-      res.json(rows);
-    }
+app.get("/history", auth, async (req, res) => {
+  const result = await pool.query(
+    "SELECT * FROM transactions WHERE from_user=$1 OR to_user=$1 ORDER BY date DESC",
+    [req.session.user]
   );
+
+  res.json(result.rows);
 });
 
 // 🚪 LOGOUT
 app.get("/logout", (req, res) => {
   req.session.destroy(() => {
-    res.clearCookie("connect.sid");
     res.json({ success: true });
   });
 });
 
-// 🏠 HOME
 app.get("/", (req, res) => {
-  res.send("🔥 FastMoney BANK 💸 ONLINE 🚀");
+  res.send("🔥 FastMoney PRO funcionando 🚀");
 });
 
-// 🚀 SERVER (RENDER FIX)
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("🚀 Servidor corriendo en puerto " + PORT);
+app.listen(process.env.PORT || 3000, () => {
+  console.log("Servidor corriendo");
 });
