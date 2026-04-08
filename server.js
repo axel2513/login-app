@@ -7,27 +7,32 @@ const app = express();
 app.use(express.json());
 app.use(express.static("public"));
 
+// 🔐 SESIONES
 app.use(session({
   secret: "mi_secreto_super_ultra_seguro_123",
   resave: false,
   saveUninitialized: false,
 }));
 
-// 🧠 BASE DE DATOS TEMPORAL (MEMORIA)
+// 🧠 BASE DE DATOS TEMPORAL
 const users = [];
 
-// AUTH
+// 🛡️ AUTH
 function auth(req, res, next) {
   if (req.session.user) next();
   else res.status(401).json({ message: "No autorizado" });
 }
 
-// REGISTER
+// 📝 REGISTER
 app.post("/register", async (req, res) => {
   const { username, password } = req.body;
 
+  if (!username || !password) {
+    return res.json({ success: false });
+  }
+
   const exists = users.find(u => u.username === username);
-  if (exists) return res.json({ success: false });
+  if (exists) return res.json({ success: false, message: "Usuario existe" });
 
   const hash = await bcrypt.hash(password, 10);
 
@@ -36,9 +41,13 @@ app.post("/register", async (req, res) => {
   res.json({ success: true });
 });
 
-// LOGIN
+// 🔑 LOGIN
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.json({ success: false });
+  }
 
   const user = users.find(u => u.username === username);
   if (!user) return res.json({ success: false });
@@ -53,16 +62,25 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// DASHBOARD
+// 🏦 DASHBOARD
 app.get("/dashboard", auth, (req, res) => {
   res.json({ message: "Bienvenido " + req.session.user });
 });
 
-// HOME
+// 🚪 LOGOUT 🔥 (ESTO TE FALTABA)
+app.get("/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie("connect.sid");
+    res.json({ success: true, message: "Sesión cerrada" });
+  });
+});
+
+// 🏠 HOME
 app.get("/", (req, res) => {
   res.send("🔥 FastMoney ONLINE 🚀");
 });
 
+// 🚀 SERVER
 app.listen(process.env.PORT || 3000, () => {
   console.log("Servidor corriendo");
 });
