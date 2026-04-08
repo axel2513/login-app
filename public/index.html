@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Login Pro</title>
+
+  <style>
+    body {
+      font-family: Arial;
+      background: #0f172a;
+      color: white;
+      text-align: center;
+      margin-top: 100px;
+    }
+
+    .card {
+      background: #1e293b;
+      padding: 30px;
+      border-radius: 15px;
+      width: 300px;
+      margin: auto;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+
+    input {
+      width: 90%;
+      padding: 10px;
+      margin: 5px;
+      border-radius: 8px;
+      border: none;
+    }
+
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      background: #22c55e;
+      color: white;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+
+    button:hover {
+      background: #16a34a;
+    }
+
+    #dashboard {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="card" id="auth">
+  <h2>🔐 Login</h2>
+
+  <input id="user" placeholder="Usuario"><br>
+  <input id="pass" type="password" placeholder="Password"><br>
+
+  <button onclick="register()">Registrarse</button>
+  <button onclick="login()">Entrar</button>
+
+  <p id="msg"></p>
+</div>
+
+<div class="card" id="dashboard">
+  <h2>🏦 Dashboard</h2>
+  <p id="welcome"></p>
+
+  <button onclick="logout()">Cerrar sesión</button>
+</div>
+
+<script>
+async function register(){
+  let username = document.getElementById("user").value;
+  let password = document.getElementById("pass").value;
+
+  await fetch("/register",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({username, password})
+  });
+
+  document.getElementById("msg").innerText = "Registrado!";
+}
+
+async function login(){
+  let username = document.getElementById("user").value;
+  let password = document.getElementById("pass").value;
+
+  let r = await fetch("/login",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({username, password})
+  });
+
+  let data = await r.json();
+
+  if (data.success) {
+    loadDashboard();
+  } else {
+    document.getElementById("msg").innerText = "❌ Datos incorrectos";
+  }
+}
+
+async function loadDashboard(){
+  let r = await fetch("/dashboard");
+  let data = await r.json();
+
+  if (data.message.includes("Bienvenido")) {
+    document.getElementById("auth").style.display = "none";
+    document.getElementById("dashboard").style.display = "block";
+    document.getElementById("welcome").innerText = data.message;
+  }
+}
+
+async function logout(){
+  await fetch("/logout");
+  location.reload();
+}
+
+// 🔥 Auto login si ya hay sesión
+loadDashboard();
+</script>
+
+</body>
+</html>
