@@ -1,5 +1,5 @@
 const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
+const Database = require("better-sqlite3");
 const bcrypt = require("bcrypt");
 const session = require("express-session");
 
@@ -20,18 +20,16 @@ app.use(session({
   }
 }));
 
-const db = new sqlite3.Database("database.db");
+const db = new Database("database.db");
 
 // Crear tabla
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE,
-      password TEXT
-    )
-  `);
-});
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE,
+    password TEXT
+  )
+`).run();
 
 // 🛡️ MIDDLEWARE
 function auth(req, res, next) {
@@ -50,52 +48,40 @@ app.post("/register", async (req, res) => {
     return res.json({ success: false });
   }
 
-  db.get(
-    "SELECT * FROM users WHERE username=?",
-    [username],
-    async (err, user) => {
-      if (user) {
-        return res.json({ success: false, message: "Usuario ya existe" });
-      }
+  const user = db.prepare("SELECT * FROM users WHERE username=?").get(username);
 
-      const hash = await bcrypt.hash(password, 10);
+  if (user) {
+    return res.json({ success: false, message: "Usuario ya existe" });
+  }
 
-      db.run(
-        "INSERT INTO users (username, password) VALUES (?, ?)",
-        [username, hash],
-        () => {
-          res.json({ success: true });
-        }
-      );
-    }
-  );
+  const hash = await bcrypt.hash(password, 10);
+
+  db.prepare("INSERT INTO users (username, password) VALUES (?, ?)")
+    .run(username, hash);
+
+  res.json({ success: true });
 });
 
 // LOGIN
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
     return res.json({ success: false });
   }
 
-  db.get(
-    "SELECT * FROM users WHERE username=?",
-    [username],
-    async (err, user) => {
-      if (err) return res.json({ success: false });
-      if (!user) return res.json({ success: false });
+  const user = db.prepare("SELECT * FROM users WHERE username=?").get(username);
 
-      const valid = await bcrypt.compare(password, user.password);
+  if (!user) return res.json({ success: false });
 
-      if (valid) {
-        req.session.user = user.username;
-        res.json({ success: true });
-      } else {
-        res.json({ success: false });
-      }
-    }
-  );
+  const valid = await bcrypt.compare(password, user.password);
+
+  if (valid) {
+    req.session.user = user.username;
+    res.json({ success: true });
+  } else {
+    res.json({ success: false });
+  }
 });
 
 // DASHBOARD PROTEGIDO
