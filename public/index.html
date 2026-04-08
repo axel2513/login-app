@@ -2,180 +2,147 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>FastMoney 💸</title>
-
-  <style>
-    body {
-      font-family: Arial;
-      background: #0f172a;
-      color: white;
-      text-align: center;
-      margin-top: 80px;
-    }
-
-    .card {
-      background: #1e293b;
-      padding: 30px;
-      border-radius: 15px;
-      width: 320px;
-      margin: auto;
-      box-shadow: 0 0 20px rgba(0,0,0,0.5);
-    }
-
-    input {
-      width: 90%;
-      padding: 10px;
-      margin: 5px;
-      border-radius: 8px;
-      border: none;
-    }
-
-    button {
-      padding: 10px 20px;
-      border: none;
-      border-radius: 8px;
-      background: #22c55e;
-      color: white;
-      cursor: pointer;
-      margin-top: 10px;
-    }
-
-    button:hover {
-      background: #16a34a;
-    }
-
-    #dashboard {
-      display: none;
-    }
-
-    .money {
-      font-size: 22px;
-      margin: 10px 0;
-      color: #4ade80;
-    }
-  </style>
+  <title>FastMoney</title>
 </head>
-
 <body>
 
-<!-- LOGIN -->
-<div class="card" id="auth">
-  <h2>🔐 FastMoney</h2>
+<h2>🔐 Login</h2>
 
-  <input id="user" placeholder="Usuario"><br>
-  <input id="pass" type="password" placeholder="Password"><br>
+<input id="user" placeholder="Usuario"><br><br>
+<input id="pass" type="password" placeholder="Contraseña"><br><br>
 
-  <button onclick="register()">Registrarse</button>
-  <button onclick="login()">Entrar</button>
+<button onclick="login()">Entrar</button>
 
-  <p id="msg"></p>
-</div>
+<p id="msg"></p>
 
-<!-- DASHBOARD -->
-<div class="card" id="dashboard">
+<hr>
+
+<div id="dashboard" style="display:none">
+
   <h2>🏦 Dashboard</h2>
 
-  <p id="welcome"></p>
-  <p class="money">💰 Saldo: $<span id="balance">0</span></p>
+  <p>Usuario: <span id="welcome"></span></p>
+  <p>💰 Saldo: $<span id="balance"></span></p>
 
   <h3>💸 Enviar dinero</h3>
-  <input id="to" placeholder="Enviar a (usuario)">
-  <input id="amount" type="number" placeholder="Monto">
 
-  <button onclick="send()">Enviar</button>
+  <input id="to" placeholder="Usuario destino"><br><br>
+  <input id="amount" type="number" placeholder="Monto"><br><br>
+
+  <button onclick="sendMoney()">Enviar</button>
 
   <p id="sendMsg"></p>
 
+  <h3>📜 Historial</h3>
+  <ul id="history"></ul>
+
+  <br>
   <button onclick="logout()">Cerrar sesión</button>
+
 </div>
 
 <script>
-async function register(){
-  let username = user.value;
-  let password = pass.value;
 
-  let r = await fetch("/register",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({username, password})
+// 🔍 verificar sesión al cargar
+checkSession();
+
+async function checkSession() {
+  let res = await fetch("/session", {
+    credentials: "include" // 🔥 CLAVE
   });
 
-  let data = await r.json();
-  msg.innerText = data.success ? "✅ Registrado!" : "❌ Error";
-}
+  let data = await res.json();
 
-async function login(){
-  let username = user.value;
-  let password = pass.value;
-
-  let r = await fetch("/login",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({username, password})
-  });
-
-  let data = await r.json();
-
-  if (data.success) {
-    loadDashboard();
-  } else {
-    msg.innerText = "❌ Datos incorrectos";
+  if (data.logged) {
+    showDashboard();
   }
 }
 
-async function loadDashboard(){
-  let r = await fetch("/dashboard");
-  let data = await r.json();
-
-  if (data.message) {
-    auth.style.display = "none";
-    dashboard.style.display = "block";
-    welcome.innerText = data.message;
-
-    loadBalance();
-  }
-}
-
-// 💰 CARGAR SALDO
-async function loadBalance(){
-  let r = await fetch("/balance");
-  let data = await r.json();
-
-  balance.innerText = data.balance;
-}
-
-// 💸 ENVIAR DINERO
-async function send(){
-  let toUser = to.value;
-  let amountValue = parseInt(amount.value);
-
-  let r = await fetch("/send",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
+async function login() {
+  let res = await fetch("/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include", // 🔥 CLAVE
     body: JSON.stringify({
-      to: toUser,
-      amount: amountValue
+      username: user.value,
+      password: pass.value
     })
   });
 
-  let data = await r.json();
+  let data = await res.json();
 
   if (data.success) {
-    sendMsg.innerText = "✅ Enviado!";
-    loadBalance();
+    showDashboard();
   } else {
-    sendMsg.innerText = "❌ " + data.message;
+    msg.innerText = "❌ Login incorrecto";
   }
 }
 
-// 🚪 LOGOUT
-async function logout(){
-  await fetch("/logout");
+async function showDashboard() {
+  document.getElementById("dashboard").style.display = "block";
+
+  let res = await fetch("/dashboard", {
+    credentials: "include" // 🔥 CLAVE
+  });
+
+  if (res.status === 401) {
+    alert("No autorizado");
+    return;
+  }
+
+  let data = await res.json();
+
+  document.getElementById("welcome").innerText = data.username;
+  document.getElementById("balance").innerText = data.balance;
+
+  loadHistory();
+}
+
+async function sendMoney() {
+  let res = await fetch("/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include", // 🔥 CLAVE
+    body: JSON.stringify({
+      to: to.value,
+      amount: Number(amount.value)
+    })
+  });
+
+  let data = await res.json();
+
+  sendMsg.innerText = data.success
+    ? "✅ Enviado"
+    : "❌ " + data.message;
+
+  showDashboard();
+}
+
+async function loadHistory() {
+  let res = await fetch("/history", {
+    credentials: "include" // 🔥 CLAVE
+  });
+
+  let data = await res.json();
+
+  let list = document.getElementById("history");
+  list.innerHTML = "";
+
+  data.forEach(t => {
+    let li = document.createElement("li");
+    li.innerText = `${t.from_user} → ${t.to_user} : $${t.amount}`;
+    list.appendChild(li);
+  });
+}
+
+async function logout() {
+  await fetch("/logout", {
+    credentials: "include" // 🔥 CLAVE
+  });
+
   location.reload();
 }
 
-// 🔥 AUTO LOGIN
-loadDashboard();
 </script>
 
 </body>
