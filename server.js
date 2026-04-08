@@ -7,7 +7,6 @@ const app = express();
 app.use(express.json());
 app.use(express.static("public"));
 
-// 🔐 SESIONES
 app.use(session({
   secret: "mi_secreto_super_ultra_seguro_123",
   resave: false,
@@ -17,26 +16,26 @@ app.use(session({
 // 🧠 BASE DE DATOS TEMPORAL
 const users = [];
 
-// 🛡️ AUTH
+// AUTH
 function auth(req, res, next) {
   if (req.session.user) next();
   else res.status(401).json({ message: "No autorizado" });
 }
 
-// 📝 REGISTER
+// 📝 REGISTER (ahora con saldo)
 app.post("/register", async (req, res) => {
   const { username, password } = req.body;
 
-  if (!username || !password) {
-    return res.json({ success: false });
-  }
-
   const exists = users.find(u => u.username === username);
-  if (exists) return res.json({ success: false, message: "Usuario existe" });
+  if (exists) return res.json({ success: false });
 
   const hash = await bcrypt.hash(password, 10);
 
-  users.push({ username, password: hash });
+  users.push({
+    username,
+    password: hash,
+    balance: 1000 // 💸 saldo inicial
+  });
 
   res.json({ success: true });
 });
@@ -44,10 +43,6 @@ app.post("/register", async (req, res) => {
 // 🔑 LOGIN
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res.json({ success: false });
-  }
 
   const user = users.find(u => u.username === username);
   if (!user) return res.json({ success: false });
@@ -62,25 +57,51 @@ app.post("/login", async (req, res) => {
   }
 });
 
+// 💰 VER BALANCE
+app.get("/balance", auth, (req, res) => {
+  const user = users.find(u => u.username === req.session.user);
+  res.json({ balance: user.balance });
+});
+
+// 💸 ENVIAR DINERO
+app.post("/send", auth, (req, res) => {
+  const { to, amount } = req.body;
+
+  const sender = users.find(u => u.username === req.session.user);
+  const receiver = users.find(u => u.username === to);
+
+  if (!receiver) {
+    return res.json({ success: false, message: "Usuario no existe" });
+  }
+
+  if (sender.balance < amount) {
+    return res.json({ success: false, message: "Saldo insuficiente" });
+  }
+
+  sender.balance -= amount;
+  receiver.balance += amount;
+
+  res.json({ success: true });
+});
+
 // 🏦 DASHBOARD
 app.get("/dashboard", auth, (req, res) => {
   res.json({ message: "Bienvenido " + req.session.user });
 });
 
-// 🚪 LOGOUT 🔥 (ESTO TE FALTABA)
+// 🚪 LOGOUT
 app.get("/logout", (req, res) => {
   req.session.destroy(() => {
     res.clearCookie("connect.sid");
-    res.json({ success: true, message: "Sesión cerrada" });
+    res.json({ success: true });
   });
 });
 
 // 🏠 HOME
 app.get("/", (req, res) => {
-  res.send("🔥 FastMoney ONLINE 🚀");
+  res.send("🔥 FastMoney BANK 💸 ONLINE 🚀");
 });
 
-// 🚀 SERVER
 app.listen(process.env.PORT || 3000, () => {
   console.log("Servidor corriendo");
 });
